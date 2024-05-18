@@ -162,7 +162,7 @@ app.post("/server/:id/stop", async (req, res) => {
 
 app.post("/server/add", async (req, res) => {
     try {
-        const json = JSON.parse(req.body);
+        const json = req.body;
 
         const validated = z.object({
             name: z.string(),
@@ -196,7 +196,7 @@ app.post("/server/add", async (req, res) => {
 
 app.put("/server/:id", async (req, res) => {
     try {
-        const json = JSON.parse(req.body);
+        const json = req.body;
 
         const validated = z.object({
             name: z.string(),
