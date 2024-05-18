@@ -72,7 +72,7 @@ function updateState(id: number, state: Message & {type: "status"}) {
 export function waitForMessage(type: Message["type"], server_id: number): PromiseLike<undefined | Message> {
     let server = getServer(server_id);
 
-    if (!server) {
+    if (!server || !server.socket) {
         return new Promise(resolve => resolve(undefined));
     }
 
@@ -80,6 +80,8 @@ export function waitForMessage(type: Message["type"], server_id: number): Promis
         server.emitter.once(type, (msg) => {
             resolve(msg);
         });
+
+        setTimeout(() => resolve(undefined), 5000);
     })
 }
 

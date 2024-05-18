@@ -82,6 +82,10 @@ app.get("/server/:id", async (req, res) => {
 
     const localServer = getServer(+req.params.id);
 
+    sendMessage(+req.params.id, {type: "status_request"});
+
+    const message = await waitForMessage("status", +req.params.id);
+
     return res.status(200).json({
         details: server,
         state: getState(+req.params.id),
@@ -208,7 +212,7 @@ app.put("/server/:id", async (req, res) => {
         game_port: newServer.data.game_port
     }).where("id", "=", +req.params.id).executeTakeFirst();
 
-    return res.status(200).json(newId);
+    return res.status(200).json({});
 })
 
 
