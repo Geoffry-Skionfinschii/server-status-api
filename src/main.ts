@@ -205,6 +205,8 @@ app.put("/server/:id", async (req, res) => {
             game_port: z.number().int().optional()
         });
 
+        console.log(json);
+
         const newServer = validated.safeParse(json);
 
         if (!newServer.success) {
