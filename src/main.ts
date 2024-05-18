@@ -161,58 +161,68 @@ app.post("/server/:id/stop", async (req, res) => {
 });
 
 app.post("/server/add", async (req, res) => {
-    const json = JSON.parse(req.body);
+    try {
+        const json = JSON.parse(req.body);
 
-    const validated = z.object({
-        name: z.string(),
-        game_type: z.string(),
-        game_host: z.string(),
-        game_port: z.number().int().optional()
-    });
+        const validated = z.object({
+            name: z.string(),
+            game_type: z.string(),
+            game_host: z.string(),
+            game_port: z.number().int().optional()
+        });
 
-    const newServer = validated.safeParse(json);
+        const newServer = validated.safeParse(json);
 
-    if (!newServer.success) {
-        return res.status(400).json(newServer.error.flatten());
+        if (!newServer.success) {
+            return res.status(400).json(newServer.error.flatten());
+        }
+
+        const uuid = randomUUID();
+
+        const newId = await db.insertInto("servers").values({
+            name: newServer.data.name,
+            token: uuid,
+            game_host: newServer.data.game_host,
+            game_type: newServer.data.game_type,
+            game_port: newServer.data.game_port
+        }).returning('id as id').executeTakeFirst();
+
+        return res.status(200).json(newId);
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({});
     }
-
-    const uuid = randomUUID();
-
-    const newId = await db.insertInto("servers").values({
-        name: newServer.data.name,
-        token: uuid,
-        game_host: newServer.data.game_host,
-        game_type: newServer.data.game_type,
-        game_port: newServer.data.game_port
-    }).returning('id as id').executeTakeFirst();
-
-    return res.status(200).json(newId);
 });
 
 app.put("/server/:id", async (req, res) => {
-    const json = JSON.parse(req.body);
+    try {
+        const json = JSON.parse(req.body);
 
-    const validated = z.object({
-        name: z.string(),
-        game_type: z.string(),
-        game_host: z.string(),
-        game_port: z.number().int().optional()
-    });
+        const validated = z.object({
+            name: z.string(),
+            game_type: z.string(),
+            game_host: z.string(),
+            game_port: z.number().int().optional()
+        });
 
-    const newServer = validated.safeParse(json);
+        const newServer = validated.safeParse(json);
 
-    if (!newServer.success) {
-        return res.status(400).json(newServer.error.flatten());
+        if (!newServer.success) {
+            return res.status(400).json(newServer.error.flatten());
+        }
+
+        const newId = await db.updateTable("servers").set({
+            name: newServer.data.name,
+            game_host: newServer.data.game_host,
+            game_type: newServer.data.game_type,
+            game_port: newServer.data.game_port
+        }).where("id", "=", +req.params.id).executeTakeFirst();
+
+        return res.status(200).json({});
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({});
     }
-
-    const newId = await db.updateTable("servers").set({
-        name: newServer.data.name,
-        game_host: newServer.data.game_host,
-        game_type: newServer.data.game_type,
-        game_port: newServer.data.game_port
-    }).where("id", "=", +req.params.id).executeTakeFirst();
-
-    return res.status(200).json({});
 })
 
 
