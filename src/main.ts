@@ -111,6 +111,10 @@ app.post("/user", async (req, res) => {
     } catch (e) {
         res.status(400).json({message: "Username in use"});
     }
+});
+
+app.get("/user", async (req, res) => {
+    res.status(200).json({});
 })
 
 
