@@ -19,4 +19,5 @@ export interface ServerTable {
 export interface AuthTable {
     email: string;
     token: string;
+    password: string;
 }

@@ -9,8 +9,11 @@ import { getServer, getState, parseMessage, sendMessage, setWebsocket, waitForMe
 import cors from 'cors';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
+import argon2 from 'argon2';
 
 const gamedig = new GameDig();
+
+const USER_AUTH_TOKENS = new Map<string, string>();
 
 const port = 3000;
 app.use(express.json());
@@ -40,8 +43,29 @@ app.ws("/server/:token", async (ws, req) => {
         console.log(`${server.id} ${server.name} disconnected - ${code}`);
         setWebsocket(server.id, undefined);
     });
+});
 
-    
+app.post("/auth", async (req, res) => {
+    const {email, password} = await req.body;
+
+    if (!email || !password) {
+        res.status(400).json({message: "Bad Request"});
+        return;
+    }
+
+    const pw = await db.selectFrom("auth").selectAll().where("auth.email", "=", email).executeTakeFirst();
+    if (!pw) {
+        res.status(401).json({message: "Incorrect username or password"});
+        return;
+    }
+
+    if (await argon2.verify(pw.password, password)) {
+        const newUUID = randomUUID();
+
+        USER_AUTH_TOKENS.set(newUUID, pw.email);
+        res.status(200).json({token: newUUID});
+        return;
+    }
 });
 
 app.use(async (req, res, next) => {
@@ -50,14 +74,15 @@ app.use(async (req, res, next) => {
 
         const token = bearer[1];
 
-        const user = await db.selectFrom("auth").selectAll().where("token", "=", token).executeTakeFirst();
+        // const user = await db.selectFrom("auth").selectAll().where("token", "=", token).executeTakeFirst();
+        const user = USER_AUTH_TOKENS.get(token);
 
         if (!user) {
             res.status(401).json({});
             return;
         }
 
-        console.log(`Request ${user.email} ${req.path}`);
+        console.log(`Request ${user} ${req.path}`);
 
         next();
     } else {
