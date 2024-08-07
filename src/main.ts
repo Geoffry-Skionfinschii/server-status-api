@@ -104,7 +104,7 @@ app.post("/user", async (req, res) => {
         return;
     }
     try {
-        const pw = await db.insertInto("auth").values({email: email, password: await argon2.hash(password), token: "blank"}).executeTakeFirst();
+        const pw = await db.insertInto("auth").values({email: email, password: await argon2.hash(password)}).executeTakeFirst();
         res.status(200).json({email: email});
         return;
 
