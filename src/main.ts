@@ -46,7 +46,7 @@ app.ws("/server/:token", async (ws, req) => {
 });
 
 app.post("/auth", async (req, res) => {
-    const {email, password} = await req.body;
+    const {email, password} = req.body;
 
     if (!email || !password) {
         res.status(400).json({message: "Bad Request"});
@@ -66,6 +66,9 @@ app.post("/auth", async (req, res) => {
         res.status(200).json({token: newUUID});
         return;
     }
+
+    res.status(401).json({message: "Incorrect username or password"});
+    return;
 });
 
 app.use(async (req, res, next) => {
