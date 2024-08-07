@@ -96,6 +96,24 @@ app.use(async (req, res, next) => {
 });
 
 
+app.post("/user", async (req, res) => {
+    const {email, password} = req.body;
+
+    if (!email || !password) {
+        res.status(400).json({message: "Bad Request"});
+        return;
+    }
+    try {
+        const pw = await db.insertInto("auth").values({email: email, password: await argon2.hash(password), token: "blank"}).executeTakeFirst();
+        res.status(200).json({email: email});
+        return;
+
+    } catch (e) {
+        res.status(400).json({message: "Username in use"});
+    }
+})
+
+
 app.get("/server", async (req, res) => {
     const servers = await db.selectFrom("servers").selectAll().execute();
 
