@@ -109,6 +109,7 @@ app.post("/user", async (req, res) => {
         return;
 
     } catch (e) {
+        console.log(e);
         res.status(400).json({message: "Username in use"});
     }
 });
