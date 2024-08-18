@@ -1,22 +1,17 @@
 
 import EventEmitter from 'events';
 import WebSocket from 'ws';
+import { CircularBuffer } from "./lib/circular_buffer";
 
-type ServerEventEmitterTypes = {[event in Message["type"]]: [message: Message]}
 
-type ServerStatus = {
-    process_active: boolean,
-    started_at: string,
-    socket?: WebSocket,
-    emitter: EventEmitter<ServerEventEmitterTypes>
-}
+type ServerEventEmitterTypes = {[event in HostMessageType]: [message: HostMessage]}
+type GlobalServerEventEmitterTypes = {"message": [{
+    message: HostMessage,
+    server_id: number
+}]}
 
-type Message = {
+export type ClientMessage = {
     type: "status_request"
-} | {
-    type: "status"
-    process_active: boolean,
-    started_at: string
 } | {
     type: "start_process"
 } | {
@@ -25,128 +20,178 @@ type Message = {
     type: "send_command"
     data: string
 } | {
+    type: "request_full_stdout"
+} | {
+    type: "request_full_stderr"
+}
+
+export type HostMessage = {
+    type: "status"
+    process_active: boolean,
+    started_at: string
+} | {
     type: "stdout",
     data: string
 } | {
     type: "stderr",
     data: string
 } | {
-    type: "request_full_stdout"
-} | {
-    type: "request_full_stderr"
-} | {
     type: "full_stdout",
-    data: string
+    data: string[]
 } | {
     type: "full_stderr",
-    data: string
+    data: string[]
 }
 
-const SERVERS: {[id: number]: ServerStatus} = {};
+type HostMessageType = HostMessage["type"];
 
-export function getServer(id: number) {
-    return SERVERS[id];
-}
+class ServerSessionHandler {
+    private SERVERS: Map<number, ServerSession> = new Map();
+    serverEvent: EventEmitter<GlobalServerEventEmitterTypes> = new EventEmitter();
 
-function getOrCreateServer(id: number) {
-    let server = getServer(id);
-    if (!server) {
-        const newServer = {
-            emitter: new EventEmitter<ServerEventEmitterTypes>(),
-            process_active: false,
-            started_at: ""
+    getServer(id: number) {
+        return this.SERVERS.get(id);
+    }
+
+    createServer(id: number) {
+        if (this.SERVERS.get(id)) {
+            throw new Error("attempted to create duplicate server");
         }
 
-        SERVERS[id] = newServer;
-        return newServer as ServerStatus;
-    }
-    return server;
-}
+        const newServer = new ServerSession(id);
+        this.SERVERS.set(id, newServer);
 
-function updateState(id: number, state: Message & {type: "status"}) {
-    let server = getOrCreateServer(id);
-    server.process_active = state.process_active,
-    server.started_at = state.started_at
-}
-
-export function waitForMessage(type: Message["type"], server_id: number): PromiseLike<undefined | Message> {
-    let server = getServer(server_id);
-
-    if (!server || !server.socket) {
-        return new Promise(resolve => resolve(undefined));
+        return newServer;
     }
 
-    return new Promise(resolve => {
-        server.emitter.once(type, (msg) => {
-            resolve(msg);
+    getServerList() {
+        return this.SERVERS.values();
+    }
+
+}
+
+const HANDLER = new ServerSessionHandler();
+
+class ServerSession {
+    id: number;
+    process_active: boolean;
+    started_at: undefined | string;
+    last_updated: Date;
+    socket?: WebSocket | undefined;
+    emitter: EventEmitter<ServerEventEmitterTypes>;
+    stdout: CircularBuffer<string>;
+    
+    constructor(server_id: number, socket?: WebSocket) {
+        this.id = server_id;
+        this.process_active = false;
+        this.started_at = undefined;
+        this.socket = undefined;
+        this.emitter = new EventEmitter();
+        this.last_updated = new Date();
+        // Default size will be 1024 lines.
+        this.stdout = new CircularBuffer(1024);
+
+        if (socket) {
+            this.websocketConnected(socket);
+        }
+    }
+
+    websocketConnected(socket: WebSocket) {
+        if (this.socket) {
+            this.socket.close();
+        }
+        this.socket = socket;
+
+        socket.on("message", (data: string) => {
+            try {
+                const message = JSON.parse(data) as HostMessage;
+
+                this.parseMessage(message);
+            } catch (e) {
+                console.log("Parsed malformed JSON", e, data);
+            }
         });
 
-        setTimeout(() => resolve(undefined), 5000);
-    })
-}
+        socket.on("close", (code, reason) => {
+            this.websocketDisconnected();
+        });
 
-export function setWebsocket(id: number, socket?: WebSocket) {
-    let server = getOrCreateServer(id);
-    server.socket = socket;
-}
+        this.sendMessage({type: "status_request"});
+    }
 
-export function getState(id: number) {
-
-    let server = getServer(id);
-
-    if (server) {
-        return {
-            process_active: server.process_active,
-            started_at: server.started_at,
-            socket_active: server.socket ? true : false
+    websocketDisconnected() {
+        if (this.socket) {
+            this.socket.close();
         }
-    } else {
-        return undefined;
+        this.socket = undefined;
+        this.sendMessage({type: "status_request"});
     }
 
-}
+    parseMessage(message: HostMessage) {
+        this.emitter.emit(message.type, message);
+        HANDLER.serverEvent.emit("message", { message, server_id: this.id });
 
-export function parseMessage(server_id: number, messageData: Record<string, any>) {
+        switch (message.type) {
+            case "full_stderr":
+                break;
+            case "full_stdout":
+                break;
+            case "status":
+                this.process_active = message.process_active;
+                this.started_at = message.started_at == "" ? undefined : message.started_at;
+                this.last_updated = new Date();
+                break;
+            case "stderr":
+                break;
+            case "stdout":
+                this.stdout.push(message.data);
+                break;
+        }
+    }
 
-    const message = messageData as Message;
-    const server = getOrCreateServer(server_id);
+    sendMessage(message: ClientMessage) {
+        if (!this.socket) return false;
 
-    server.emitter.emit(message.type, message);
+        this.socket.send(JSON.stringify(message));
 
-    switch (message.type) {
-        case "full_stderr":
-            break;
-        case "full_stdout":
-            break;
-        case "request_full_stderr":
-            break;
-        case "request_full_stdout":
-            break;
-        case "send_command":
-            break;
-        case "start_process":
-            break;
-        case "status":
-            updateState(server_id, message);
-            break;
-        case "status_request":
-            break;
-        case "stderr":
-            break;
-        case "stdout":
-            break;
-        case "stop_process":
-            break;
+        return true;
+    }
+
+    startServer() {
+        return this.sendMessage({ type: "start_process" });
+    }
+
+    stopServer() {
+        return this.sendMessage({ type: "stop_process" });
+    }
+
+    awaitMessage<T extends HostMessageType>(type: T): PromiseLike<HostMessage & {type: T} | undefined> {
+        if (!this.socket) return Promise.resolve(undefined);
+
+        return new Promise(resolve => {
+            this.emitter.once(type as HostMessageType, (message) => {
+                resolve(message as HostMessage & {type: T});
+            });
+
+            setTimeout(() => resolve(undefined), 5000);
+        })
+    }
+
+    async getState() {
+        const stateWaiter = this.awaitMessage("status");
+
+        this.sendMessage({ type: "status_request" });
+
+        const status = await stateWaiter;
+
+        if (!status) return;
+
+        this.last_updated = new Date();
+        this.process_active = status.process_active;
+        this.started_at = status.started_at;
+
+        return status;
     }
 }
 
-export function sendMessage(server_id: number, messageData: Message) {
-    const msg = JSON.stringify(messageData);
-
-    const server = getServer(server_id);
-    if (!server) return;
-
-    if (!server.socket) return;
-
-    server.socket.send(msg);
-}
+export { HANDLER as ServerSessionHandler };
