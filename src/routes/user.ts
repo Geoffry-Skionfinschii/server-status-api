@@ -165,7 +165,7 @@ router.ws("/stream/:token", async (ws, req) => {
 
 router.use(requireAuth);
 
-router.post("/user", async (req, res) => {
+router.post("/", async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
