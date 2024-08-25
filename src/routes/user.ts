@@ -104,7 +104,7 @@ router.ws("/stream/:token", async (ws, req) => {
                     last_connected: "",
                     last_updated: serverSession?.last_updated.toISOString() || "",
                     process_active: serverSession?.process_active || false,
-                    websocket_connected: serverSession?.process_active || false,
+                    websocket_connected: serverSession?.socket ? true : false,
                     started_at: serverSession?.started_at || ""
                 }
                 break;
