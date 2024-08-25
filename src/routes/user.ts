@@ -94,6 +94,7 @@ router.ws("/stream/:token", async (ws, req) => {
         //     "servers.id", "name", "game_type", "game_port", "game_host"
         // ]).executeTakeFirstOrThrow();
         const serverSession = ServerSessionHandler.getServer(server_id);
+        console.log(serverSession);
 
         // Parse message type from server and create necessary user message
         let userMessage: UserResponse | undefined = undefined;
