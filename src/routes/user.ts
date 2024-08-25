@@ -90,7 +90,9 @@ router.ws("/stream/:token", async (ws, req) => {
     };
 
     const handleServerMessage: (arg: HostMessageWithId) => void = async ( {message, server_id}) => {
-        const server = await db.selectFrom("servers").where("servers.id", "=", server_id).executeTakeFirstOrThrow();
+        // const server = await db.selectFrom("servers").where("servers.id", "=", server_id).select([
+        //     "servers.id", "name", "game_type", "game_port", "game_host"
+        // ]).executeTakeFirstOrThrow();
         const serverSession = ServerSessionHandler.getServer(server_id);
 
         // Parse message type from server and create necessary user message
