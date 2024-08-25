@@ -5,10 +5,7 @@ import { CircularBuffer } from "./lib/circular_buffer";
 
 
 type ServerEventEmitterTypes = {[event in HostMessageType]: [message: HostMessage]}
-type GlobalServerEventEmitterTypes = {"message": [{
-    message: HostMessage,
-    server_id: number
-}]}
+type GlobalServerEventEmitterTypes = {"message": [HostMessageWithId]}
 
 export type ClientMessage = {
     type: "status_request"
@@ -42,6 +39,8 @@ export type HostMessage = {
     type: "full_stderr",
     data: string[]
 }
+
+export type HostMessageWithId = {message: HostMessage, server_id: number};
 
 type HostMessageType = HostMessage["type"];
 
@@ -169,7 +168,7 @@ class ServerSession {
         if (!this.socket) return Promise.resolve(undefined);
 
         return new Promise(resolve => {
-            this.emitter.once(type as HostMessageType, (message) => {
+            this.emitter.prependOnceListener(type as HostMessageType, (message) => {
                 resolve(message as HostMessage & {type: T});
             });
 

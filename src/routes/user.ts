@@ -3,7 +3,7 @@ import { db } from "../database";
 import argon2 from "argon2";
 import { requireAuth } from "../middleware/require_auth";
 import { getTokenEmail } from "../auth_tokens";
-import { ClientMessage, HostMessage, ServerSessionHandler } from "../servers";
+import { ClientMessage, HostMessage, HostMessageWithId, ServerSessionHandler } from "../servers";
 
 const router = Router();
 
@@ -37,21 +37,34 @@ interface Server {
     game_port?: number;
 }
 
-type ExtendedUserResponse =
+type UserResponse =
     | {
           type: "extended_status";
           process_active: boolean;
           started_at: string;
           last_updated: string;
+          last_connected: string;
           websocket_connected: boolean;
       }
     | {
         type: "discover",
-        details: Server
+        details: Server,
     }
-    | HostMessage;
+    | {
+        type: "stdout",
+        data: string,
+    } | {
+        type: "stderr",
+        data: string,
+    } | {
+        type: "full_stdout",
+        data: string[],
+    } | {
+        type: "full_stderr",
+        data: string[],
+    };
 
-type UserResponse = { server_id: number } & { message: ExtendedUserResponse };
+type UserResponseWithServer = { server_id: number } & { message: UserResponse };
 
 router.ws("/stream/:token", async (ws, req) => {
     const token = req.params.token;
@@ -66,15 +79,54 @@ router.ws("/stream/:token", async (ws, req) => {
 
     console.log(`User ${user} has connected to RCON socket`);
 
-    const constructMessage = (message: ExtendedUserResponse, server_id: number) =>
-        ({ message, server_id } as UserResponse);
+    const constructMessage = (message: UserResponse, server_id: number) =>
+        ({ message, server_id } as UserResponseWithServer);
 
-    const handleMessage: (arg: UserResponse) => void = ({ message, server_id }) => {
+    const sendMessage: (arg: UserResponseWithServer) => void = async ({ message, server_id }) => {
+
+
         console.log(`Sending to ${user} ${server_id}:${message.type}`);
         ws.send(JSON.stringify(constructMessage(message, server_id)));
     };
 
-    ServerSessionHandler.serverEvent.on("message", handleMessage);
+    const handleServerMessage: (arg: HostMessageWithId) => void = async ( {message, server_id}) => {
+        const server = await db.selectFrom("servers").where("servers.id", "=", server_id).executeTakeFirstOrThrow();
+        const serverSession = ServerSessionHandler.getServer(server_id);
+
+        // Parse message type from server and create necessary user message
+        let userMessage: UserResponse | undefined = undefined;
+        switch (message.type) {
+            case "status":
+                userMessage = {
+                    type: "extended_status", 
+                    last_connected: "",
+                    last_updated: serverSession?.last_updated.toISOString() || "",
+                    process_active: serverSession?.process_active || false,
+                    websocket_connected: serverSession?.process_active || false,
+                    started_at: serverSession?.started_at || ""
+                }
+                break;
+            case "full_stderr":
+                userMessage = {type: "full_stderr", data: message.data}
+                break;
+            case "full_stdout":
+                userMessage = {type: "full_stdout", data: message.data}
+                break;
+            case "stderr":
+                userMessage = {type: "stderr", data: message.data}
+
+                break;
+            case "stdout":
+                userMessage = {type: "stdout", data: message.data}
+                break;
+        }
+
+        if (userMessage) {
+            sendMessage(constructMessage(userMessage, server_id));
+        }
+    }
+
+    ServerSessionHandler.serverEvent.on("message", handleServerMessage);
 
     ws.on("message", (data: string) => {
         const request = JSON.parse(data) as UserRequest;
@@ -92,7 +144,7 @@ router.ws("/stream/:token", async (ws, req) => {
                     { type: "full_stdout", data: server.stdout.get() },
                     request.server_id
                 );
-                handleMessage(stdoutPacketFull);
+                sendMessage(stdoutPacketFull);
 
                 break;
             case "start_process":
@@ -116,12 +168,13 @@ router.ws("/stream/:token", async (ws, req) => {
                     values.forEach(async (serv) => {
                         await serv.getState();
 
-                        handleMessage(constructMessage({ 
+                        sendMessage(constructMessage({ 
                             type: "extended_status",
                             last_updated: serv.last_updated.toISOString(),
                             process_active: serv.process_active,
                             started_at: serv.started_at || "",
-                            websocket_connected: serv.socket != undefined
+                            websocket_connected: serv.socket != undefined,
+                            last_connected: ""
                         }, serv.id));
                     });
                 }
@@ -134,14 +187,14 @@ router.ws("/stream/:token", async (ws, req) => {
 
                         values.forEach(async (serv) => {
     
-                            handleMessage(constructMessage({ 
+                            sendMessage(constructMessage({ 
                                 type: "discover",
                                 details: serv
                             }, serv.id));
 
                             const serverSess = ServerSessionHandler.getServer(serv.id);
                             if (serverSess) {
-                                handleMessage(constructMessage({
+                                sendMessage(constructMessage({
                                     type: "full_stdout",
                                     data: serverSess.stdout.get()
                                 }, serverSess.id));
@@ -159,7 +212,7 @@ router.ws("/stream/:token", async (ws, req) => {
 
     ws.on("close", (code) => {
         console.log(`${user} disconnected from ${id} - ${code}`);
-        ServerSessionHandler.serverEvent.off("message", handleMessage);
+        ServerSessionHandler.serverEvent.off("message", handleServerMessage);
     });
 });
 
@@ -185,7 +238,7 @@ router.post("/", async (req, res) => {
     }
 });
 
-router.get("/user", async (req, res) => {
+router.get("/", async (req, res) => {
     res.status(200).json({});
 });
 
