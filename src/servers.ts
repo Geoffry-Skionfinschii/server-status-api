@@ -130,6 +130,8 @@ class ServerSession {
         this.emitter.emit(message.type, message);
         HANDLER.serverEvent.emit("message", { message, server_id: this.id });
 
+        console.log(`Recieved message from server ${this.id}:${JSON.stringify(message)}`);
+
         switch (message.type) {
             case "full_stderr":
                 break;
